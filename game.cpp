@@ -7,16 +7,17 @@
 #define WIDTH  800
 #define HEIGHT 600
 #define AGENTS 100000
-#define RADIUS 80f
-#define SIZE 40f
+#define RADIUS 100.f
+#define SIZE 50.f
 
-float AGENT_SPEED;
-float LOOK_ANGLE;
-float STEER_MAX_ANGLE;
-float LOOK_DISTANCE;
-float DECAY_RATE;
-bool SQUARE_BIAS;
-Color TINT;
+float AGENT_SPEED = 1.f;
+float LOOK_ANGLE = M_PI / 12.f;
+float STEER_MAX_ANGLE = M_PI / 12.f;
+float LOOK_DISTANCE = 100.f;
+float DECAY_RATE = .99f;
+bool SQUARE_BIAS = 0;
+Color FG = 0x000040ff;
+Color BG = 0xffffbfff;
 
 struct Agent {
     float angle;
@@ -39,11 +40,13 @@ void random_params() {
     STEER_MAX_ANGLE = frand() * M_PI / 2.f;
     DECAY_RATE = frand() * .5f + .5f;
     SQUARE_BIAS = floor(frand() * 2.f);
-    TINT = rgba(frand() * 256.f, frand() * 256.f, frand() * 256.f, 0x08);
+    FG = rgb(frand() * 32.f, frand() * 32.f, frand() * 32.f);
+    BG = (0xffffffff - FG) | 0xff;
+    printf("%f %f %f %f %f %d %x %x\n", AGENT_SPEED, LOOK_ANGLE, LOOK_DISTANCE , STEER_MAX_ANGLE, DECAY_RATE, SQUARE_BIAS, FG, BG);
 }
 
 void setup() {
-    random_params();
+    //random_params();
     board.width  = WIDTH;
     board.height = HEIGHT;
     board.data.resize(board.width * board.height);
@@ -51,49 +54,57 @@ void setup() {
     backboard.height = board.height;
     backboard.data.resize(backboard.width * backboard.height);
     for (int i = 0; i < board.height; ++i) for (int j = 0; j < board.width; ++j)
-        board.data[i * board.width + j] = grayscale(0);
-    for (int i = 0; i < LEN(agents); ++i)
-        agents[i] = {(float)(rand() % 628) / 100.f, AGENT_SPEED, {rand() % WIDTH, rand() % HEIGHT}};
+        board.data[i * board.width + j] = FG & ~0xff;
+    //for (int i = 0; i < LEN(agents); ++i)
+    //    agents[i] = {(float)(rand() % 628) / 100.f, AGENT_SPEED, {rand() % WIDTH, rand() % HEIGHT}};
     //for (int i = 0; i < LEN(agents); ++i)
     //    agents[i] = {(float)(rand() % 628) / 100.f, AGENT_SPEED, {board.width / 2, board.height / 2}};
-    //for (int i = 0; i < LEN(agents); ++i)
-    //    agents[i] = {(float)i / LEN(agents) * 2 * M_PI + M_PI / 2, AGENT_SPEED, 
-    //        board.width  / 2 + RADIUS * cos((float)i / LEN(agents) * 2 * M_PI) + (rand() % (int)SIZE) - SIZE / 2, 
-    //        board.height / 2 + RADIUS * sin((float)i / LEN(agents) * 2 * M_PI) + (rand() % (int)SIZE) - SIZE / 2};
+    for (int i = 0; i < LEN(agents); ++i)
+        agents[i] = {(float)i / LEN(agents) * 2 * M_PI + M_PI / 2, AGENT_SPEED, 
+            board.width  / 2 + RADIUS * cos((float)i / LEN(agents) * 2 * M_PI) + (rand() % (int)SIZE) - SIZE / 2, 
+            board.height / 2 + RADIUS * sin((float)i / LEN(agents) * 2 * M_PI) + (rand() % (int)SIZE) - SIZE / 2};
+}
+
+Vec2 teleport(Vec2 pos) {
+    if (pos.x <  0.f)    pos.x += WIDTH;
+    if (pos.y <  0.f)    pos.y += HEIGHT;
+    if (pos.x >= WIDTH)  pos.x -= WIDTH;
+    if (pos.y >= HEIGHT) pos.y -= HEIGHT;
+    return pos;
 }
 
 Color get_board(int i, int j) {
-    if (j < 0 || j >= board.width || i < 0 || i >= board.height) return colorBlack;
-    return board.data[i * board.width + j];
+    Vec2 tp = teleport({j, i});
+    return board.data[tp.y * board.width + tp.x];
 }
 
 void set_board(int i, int j, Color c) {
-    if (j < 0 || j >= board.width || i < 0 || i >= board.height) return;
-    else board.data[i * board.width + j] = c;
+    Vec2 tp = teleport({j, i});
+    board.data[tp.y * board.width + tp.x] = c;
 }
 
 Color average_color(int i, int j) {
-    int r = 0, g = 0, b = 0;
+    int r = 0, g = 0, b = 0, a = 0;
     Color c;
-    c = get_board(i,   j);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    c = get_board(i+1, j);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    c = get_board(i-1, j);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    c = get_board(i,   j+1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    c = get_board(i,   j-1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    //c = get_board(i+1, j+1);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    //c = get_board(i-1, j-1);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    //c = get_board(i-1, j+1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    //c = get_board(i+1, j-1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff;
-    return rgb(r/5, g/5, b/5);
+    c = get_board(i,   j);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    c = get_board(i+1, j);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    c = get_board(i-1, j);   r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    c = get_board(i,   j+1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    c = get_board(i,   j-1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    //c = get_board(i+1, j+1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    //c = get_board(i-1, j-1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    //c = get_board(i-1, j+1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    //c = get_board(i+1, j-1); r += (c >> 24) & 0xff; g += (c >> 16) & 0xff; b += (c >>  8) & 0xff; a += c & 0xff;
+    return rgba(r/5, g/5, b/5, a/5);
 }
 
 float new_angle(Agent a) {
     float az = a.angle;
     float ap = a.angle + LOOK_ANGLE;
     float am = a.angle - LOOK_ANGLE;
-    int wz = std::max((get_board(a.pos.y + sin(az) * a.speed * LOOK_DISTANCE, a.pos.x + cos(az) * a.speed * LOOK_DISTANCE) & 0xff00) >> 8, 1u);
-    int wp = std::max((get_board(a.pos.y + sin(ap) * a.speed * LOOK_DISTANCE, a.pos.x + cos(ap) * a.speed * LOOK_DISTANCE) & 0xff00) >> 8, 1u);
-    int wm = std::max((get_board(a.pos.y + sin(am) * a.speed * LOOK_DISTANCE, a.pos.x + cos(am) * a.speed * LOOK_DISTANCE) & 0xff00) >> 8, 1u);
+    int wz = std::max(get_board(a.pos.y + sin(az) * a.speed * LOOK_DISTANCE, a.pos.x + cos(az) * a.speed * LOOK_DISTANCE) & 0xff, 1u);
+    int wp = std::max(get_board(a.pos.y + sin(ap) * a.speed * LOOK_DISTANCE, a.pos.x + cos(ap) * a.speed * LOOK_DISTANCE) & 0xff, 1u);
+    int wm = std::max(get_board(a.pos.y + sin(am) * a.speed * LOOK_DISTANCE, a.pos.x + cos(am) * a.speed * LOOK_DISTANCE) & 0xff, 1u);
 
     if (SQUARE_BIAS) {
         wz *= wz;
@@ -108,11 +119,11 @@ float new_angle(Agent a) {
 }
 
 Color decay(Color c) {
-    int gray = (c & 0xff00) >> 8;
-    if (!gray) return grayscale(gray);
+    int gray = c & 0xff;
+    if (!gray) return c;
     float fgray = gray;
     fgray *= DECAY_RATE;
-    return grayscale(fgray);
+    return FG & ~0xff | (int)fgray;
 }
 
 void blur() {
@@ -125,7 +136,7 @@ void blur() {
 void mouse_pheromones() {
     int r = 5;
     for (int i = mouseY - r; i <= mouseY + r; ++i) for (int j = mouseX - r; j <= mouseX + r; ++j)
-        set_board(i, j, grayscale(255));
+        set_board(i, j, FG);
 }
 
 void update() {
@@ -136,12 +147,8 @@ void update() {
         agents[i].pos.y += sin(agents[i].angle) * agents[i].speed;
         int x = agents[i].pos.x;
         int y = agents[i].pos.y;
-        if (x < 0 || x >= board.width || y < 0 || y >= board.height) {
-            agents[i].pos.x -= cos(agents[i].angle) * agents[i].speed;
-            agents[i].pos.y -= sin(agents[i].angle) * agents[i].speed;
-            agents[i].angle = (float)(rand() % 628)/100.f;
-        }
-        set_board(y, x, grayscale(255));
+        agents[i].pos = teleport(agents[i].pos);
+        set_board(y, x, FG);
     }
     blur();
     for (int i = 0; i < board.height; ++i) for (int j = 0; j < board.width; ++j)
@@ -149,9 +156,12 @@ void update() {
 }
 
 void draw() {
-    drawImage(board, 0, 0, board.width, board.height);
-    fillColor(TINT);
+    fillColor(BG);
     fillRect(0, 0, windowX, windowY);
+    drawImage(board, 0,           0,            board.width, board.height);
+    drawImage(board, board.width, 0,            board.width, board.height);
+    drawImage(board, 0,           board.height, board.width, board.height);
+    drawImage(board, board.width, board.height, board.width, board.height);
 }
 
 void keydown(int key) {
